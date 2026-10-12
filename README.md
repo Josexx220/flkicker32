@@ -85,6 +85,20 @@ libEGL.tcz
 openssl.tcz
 ```
 
+## Paquetes .deb (Debian y derivadas)
+
+También hay paquetes `.deb` de 32 y 64 bits para distribuciones derivadas de Debian (Debian, Ubuntu, Devuan, Loc-OS, etc.), en el [Release v0.7](../../releases/tag/v0.7):
+
+- `flkicker-0.7-amd64.deb` — 64 bits
+- `flkicker-0.7-i386.deb` — 32 bits
+
+Instalación:
+
+```
+sudo dpkg -i flkicker-0.7-*.deb
+sudo apt-get install -f
+```
+
 ## Código fuente
 
 `flkicker.cpp` — fuente completo en C++/FLTK.
