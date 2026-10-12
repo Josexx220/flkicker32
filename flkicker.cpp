@@ -1,4 +1,4 @@
-// FLKicker 0.9 - Cliente de Kick estilo FreeTube para FLinux-JC / FLinux-JC64
+// FLKicker 0.7 - Cliente de Kick estilo FreeTube para FLinux-JC / FLinux-JC64
 // C++ + FLTK 1.3. Via anonima (sin cuenta ni claves): usa los mismos
 // endpoints publicos que la web de kick.com usa para visitantes.
 //
@@ -12,21 +12,6 @@
 //   en Favoritos con el punto verde.
 // - Efecto de carga: circulo verde girando alrededor del icono K de
 //   la esquina mientras arranca el video.
-//
-// ---- 0.8 ----
-// - Favoritos muestra TODOS los canales con like, aunque no esten en
-//   directo: primero los conectados, debajo los desconectados.
-// - La busqueda filtra por nombre de canal Y por categoria (como ya
-//   decia la ayuda).
-// - Al pulsar Favoritos se borra cualquier filtro aplicado.
-// - Logo K + play en PNG transparente: uniforme en modo claro/oscuro.
-//
-// ---- 0.9 ----
-// - La columna CATEGORIA ya no es clickable.
-// - Boton Menu para elegir modo de busqueda: Canal o Categoria
-//   (por defecto Canal).
-// - La busqueda (Canal o Categoria) muestra resultados de toda la
-//   plataforma: en vivo y apagados.
 //
 //   Directos:  GET https://api.kick.com/private/v1/livestreams (paginado)
 //   Canal:     GET https://kick.com/api/v2/channels/{slug}
@@ -97,7 +82,6 @@
 #include <FL/Fl_Image.H>
 #include <FL/Fl_PNG_Image.H>
 #include <FL/Fl_Button.H>
-#include <FL/Fl_Choice.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Table_Row.H>
 #include <FL/Fl_Text_Display.H>
@@ -186,12 +170,9 @@ static const int QUALITIES[] = {160, 240, 360, 480, 720};
 // ---- 0.4: favoritos con like (pulgar) y calidad 720p ----
 static std::set<std::string> g_likes;  // slugs de canales con like
 static bool g_favs_mode = false;       // true: la lista solo muestra likes
-static std::vector<Row> g_favs_rows;   // 0.8: todos los favoritos (vivos+apagados)
 
 static Fl_Window *g_win = nullptr;
 static Fl_Input  *g_input = nullptr;
-static Fl_Choice *g_choice_mode = nullptr;  // 0.9: Canal o Categoria
-static int        g_search_mode = 0;         // 0.9: 0=Canal, 1=Categoria
 static Fl_Button *g_btn_search = nullptr;
 static Fl_Button *g_btn_info = nullptr;
 static Fl_Button *g_btn_list = nullptr;
@@ -598,9 +579,7 @@ static void parse_list_page(json_object *root, std::vector<Row> &out) {
 }
 
 // ---------------------------------------------------------------- trabajos
-enum JobKind { JOB_LIST, JOB_CHANNEL, JOB_CATEGORY, JOB_PLAY, JOB_SUGGEST,
-               JOB_FAVS, JOB_SEARCH };  // 0.8: JOB_FAVS carga todos los favoritos
-                                        // 0.9: JOB_SEARCH busca en toda la plataforma (vivos+apagados)
+enum JobKind { JOB_LIST, JOB_CHANNEL, JOB_CATEGORY, JOB_PLAY, JOB_SUGGEST };
 
 struct JobResult {
     JobKind kind;
@@ -619,9 +598,6 @@ struct JobResult {
 struct JobArg {
     JobKind kind;
     std::string query;
-    std::string note;                 // 0.9: modo para JOB_SEARCH ("0"/"1")
-    std::vector<Row> snap_rows;       // 0.8: snapshot de g_rows para JOB_FAVS
-    std::vector<std::string> snap_likes;  // 0.8: snapshot de g_likes
 };
 
 static void awake_cb(void *p);
@@ -900,141 +876,6 @@ static void *job_thread(void *vp) {
                 res->ok = true;  // tambien si salen 0: no es un error
             }
         }
-    } else if (arg->kind == JOB_SEARCH) {
-        // 0.9: busqueda en toda la plataforma.
-        // Modo Canal ("0"): Typesense por username, vivos + apagados.
-        // Modo Categoria ("1"): livestreams por categoria (solo vivos,
-        //   los apagados no tienen categoria).
-        // El indice channel de Typesense solo tiene: username, slug,
-        // is_live, is_banned, followers_count, verified. No trae
-        // categoria, viewers ni titulo.
-        res->query = arg->query;
-        bool by_cat = (arg->note == "1");
-        if (by_cat) {
-            if (fetch_lives(6, arg->query, arg->query, res)) {
-                res->ok = true;
-                char b[192];
-                snprintf(b, sizeof(b),
-                         "%zu directos en «%s».",
-                         res->rows.size(), arg->query.c_str());
-                res->note = b;
-            }
-        } else {
-            CURL *ce = curl_easy_init();
-            char *eq = ce ? curl_easy_escape(ce, arg->query.c_str(), 0) : nullptr;
-            std::string url = std::string(API_SEARCH) + "?q=" +
-                              (eq ? eq : arg->query.c_str()) +
-                              "&query_by=username" +
-                              "&filter_by=is_banned:=false" +
-                              "&sort_by=followers_count:desc&per_page=20";
-            if (eq) curl_free(eq);
-            if (ce) curl_easy_cleanup(ce);
-            HttpRes r = http_get(url, "X-TYPESENSE-API-KEY", TS_API_KEY.c_str());
-            if (!r.curl_err && r.code == 200) {
-                json_object *root = json_tokener_parse(r.body.c_str());
-                if (root) {
-                    json_object *hits = js_obj(root, "hits");
-                    std::set<std::string> seen;
-                    if (hits) {
-                        size_t n = json_object_array_length(hits);
-                        for (size_t i = 0; i < n; i++) {
-                            json_object *doc =
-                                js_obj(json_object_array_get_idx(hits, i),
-                                       "document");
-                            if (!doc) continue;
-                            Row row;
-                            row.slug = js_str(doc, "slug");
-                            row.user = js_str(doc, "username");
-                            if (row.user.empty()) row.user = row.slug;
-                            if (row.slug.empty() || seen.count(row.slug))
-                                continue;
-                            seen.insert(row.slug);
-                            json_object *lv = nullptr;
-                            row.live =
-                                json_object_object_get_ex(doc, "is_live", &lv) &&
-                                lv && json_object_get_boolean(lv);
-                            // Sin viewers ni titulo en el indice: se dejan en 0/vacio.
-                            // Al reproducir (si esta en vivo) se obtienen del api/v2.
-                            res->rows.push_back(row);
-                        }
-                    }
-                    json_object_put(root);
-                    res->ok = true;
-                    char b[192];
-                    snprintf(b, sizeof(b), "%zu canales para «%s».",
-                             res->rows.size(), arg->query.c_str());
-                    res->note = b;
-                }
-            }
-        }
-    } else if (arg->kind == JOB_FAVS) {
-        // 0.8: todos los favoritos con su estado real. Los que estan en
-        // la lista de vivos salen tal cual; para el resto se consulta el
-        // canal y se marca live=false si esta apagado. Vivos primero.
-        std::set<std::string> seen;
-        std::vector<Row> favs;
-        for (size_t i = 0; i < arg->snap_rows.size(); i++) {
-            const Row &r = arg->snap_rows[i];
-            bool liked = false;
-            for (size_t j = 0; j < arg->snap_likes.size(); j++)
-                if (arg->snap_likes[j] == r.slug) { liked = true; break; }
-            if (liked) {
-                favs.push_back(r);
-                seen.insert(r.slug);
-            }
-        }
-        for (size_t j = 0; j < arg->snap_likes.size(); j++) {
-            const std::string &slug = arg->snap_likes[j];
-            if (seen.count(slug)) continue;
-            seen.insert(slug);
-            HttpRes r = http_get(API_CHAN + slug);
-            if (r.curl_err || r.code != 200) continue;
-            json_object *root = json_tokener_parse(r.body.c_str());
-            if (!root) continue;
-            json_object *us = js_obj(root, "user");
-            std::string user = js_str(us, "username");
-            if (user.empty()) user = slug;
-            json_object *lsj = js_obj(root, "livestream");
-            bool live = false;
-            Row row;
-            row.slug = slug;
-            row.user = user;
-            if (lsj) {
-                json_object *lv = nullptr;
-                if (json_object_object_get_ex(lsj, "is_live", &lv) && lv)
-                    live = json_object_get_boolean(lv);
-                else
-                    live = true;
-            }
-            row.live = live;
-            if (live) {
-                row.title = js_str(lsj, "session_title");
-                row.viewers = js_int(lsj, "viewer_count");
-                json_object *cats = js_obj(lsj, "categories");
-                if (cats && json_object_array_length(cats) > 0)
-                    row.category = js_str(
-                        json_object_array_get_idx(cats, 0), "name");
-            }
-            json_object_put(root);
-            favs.push_back(row);
-        }
-        // 0.8: vivos primero (por espectadores), apagados debajo (a-z).
-        std::sort(favs.begin(), favs.end(), [](const Row &a, const Row &b) {
-            if (a.live != b.live) return a.live > b.live;
-            if (a.live) return a.viewers > b.viewers;
-            std::string la = lower_of(a.user), lb = lower_of(b.user);
-            if (la != lb) return la < lb;
-            return a.slug < b.slug;
-        });
-        res->rows = favs;
-        res->ok = true;
-        size_t nl = 0;
-        for (size_t i = 0; i < favs.size(); i++)
-            if (favs[i].live) nl++;
-        char b[128];
-        snprintf(b, sizeof(b), "Favoritos: %zu canales (%zu en directo).",
-                 favs.size(), nl);
-        res->note = b;
     }
 
     Fl::awake(awake_cb, res);
@@ -1079,7 +920,7 @@ static void player_launch(const std::string &url, const std::string &label,
              "ffmpeg -hide_banner -loglevel error -user_agent '%s' "
              "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
              "-i '%s' -c copy -f mpegts pipe:1 | "
-             "exec mplayer -zoom -demuxer lavf "
+             "exec mplayer -zoom -fullscreen -demuxer lavf "
              "-lavfdopts format=mpegts:probesize=200000 "
              "-vo xv,x11 -ao alsa,pulse,null -cache 8192 "
              "-cache-min 20 -framedrop -",
@@ -1194,8 +1035,8 @@ static void draw_thumb(int X, int Y, int W, int H, bool active) {
 }
 
 static void toggle_like(int r);  // definido en las acciones
-static void update_favs_btn();  // 0.8: definido en las acciones
-static void busy(bool b);       // 0.8: definido en las acciones
+static void update_favs_btn();  // definido en las acciones
+static void busy(bool b);       // definido en las acciones
 
 class KickTable : public Fl_Table_Row {
 public:
@@ -1210,7 +1051,6 @@ public:
                 toggle_like(R);
                 return 1;
             }
-            // 0.9: la columna CATEGORIA ya no es clickable.
         }
         return Fl_Table_Row::handle(e);
     }
@@ -1332,34 +1172,14 @@ static void update_favs_btn() {
 }
 
 static void favs_cb(Fl_Widget *, void *) {
+    // 0.7: Favoritos muestra solo los canales con like que estan en
+    // directo (filtro local de g_rows). No se borra el filtro.
     g_favs_mode = !g_favs_mode;
     update_favs_btn();
-    if (g_favs_mode) {
-        // 0.8: al entrar a Favoritos se borra cualquier filtro (P5) y se
-        // cargan TODOS los favoritos con su estado real (P1/P2).
-        g_input->value("");
-        busy(true);
-        set_status("Cargando favoritos...");
-        JobArg *a = new JobArg();
-        a->kind = JOB_FAVS;
-        a->snap_rows = g_rows;
-        for (std::set<std::string>::const_iterator it = g_likes.begin();
-             it != g_likes.end(); ++it)
-            a->snap_likes.push_back(*it);
-        pthread_t th;
-        if (pthread_create(&th, nullptr, job_thread, a) == 0) {
-            pthread_detach(th);
-        } else {
-            delete a;
-            busy(false);
-            set_status("No se pudo crear el hilo de red.");
-            g_favs_mode = false;
-            update_favs_btn();
-        }
-    } else {
-        apply_filter(false);
-        set_status("Directos: lista completa.");
-    }
+    apply_filter(false);
+    set_status(g_favs_mode
+                   ? "Favoritos: solo tus canales con like en directo."
+                   : "Directos: lista completa.");
 }
 
 static void busy(bool b) {
@@ -1451,27 +1271,13 @@ static void do_list() {
 }
 
 static void do_search() {
+    // 0.7: Enter/Buscar comprueba un canal concreto por API (api/v2):
+    // si esta en directo aparece con punto verde; si esta apagado, con
+    // punto rojo. Si no existe como canal, se intenta como categoria.
     std::string q = trim(g_input->value());
     if (q.empty()) { do_list(); return; }
     sugg_clear();
-    // 0.9: busca en toda la plataforma segun el modo (Canal o Categoria),
-    // mostrando en vivo y apagados.
-    busy(true);
-    set_status(g_search_mode == 1 ? "Buscando por categoria..." : "Buscando canal...");
-    JobArg *a = new JobArg();
-    a->kind = JOB_SEARCH;
-    a->query = q;
-    char mode[2];
-    snprintf(mode, sizeof(mode), "%d", g_search_mode);
-    a->note = mode;  // modo: "0"=canal, "1"=categoria
-    pthread_t th;
-    if (pthread_create(&th, nullptr, job_thread, a) == 0) {
-        pthread_detach(th);
-    } else {
-        delete a;
-        busy(false);
-        set_status("No se pudo crear el hilo de red.");
-    }
+    run_job(JOB_CHANNEL, slugify(q), "Buscando canal...");
 }
 
 static void do_play_row(int r) {
@@ -1494,11 +1300,6 @@ static void do_play_row(int r) {
 static void play_cb(Fl_Widget *, void *) { do_play_row(selected_row()); }
 static void stop_cb(Fl_Widget *, void *) { player_stop(false); }
 static void search_cb(Fl_Widget *, void *) { do_search(); }
-// 0.9: cambia el modo de busqueda (0=Canal, 1=Categoria)
-static void mode_cb(Fl_Widget *w, void *) {
-    Fl_Choice *c = (Fl_Choice *)w;
-    g_search_mode = c->value();
-}
 static void list_cb(Fl_Widget *, void *) {
     if (g_favs_mode) {  // Directos saca de Favoritos al instante
         g_favs_mode = false;
@@ -1517,13 +1318,14 @@ static void table_cb(Fl_Widget *, void *) {
 }
 
 // ------------------------------------------------------- filtro al teclear
-// Al escribir en «Canal o categoria» la tabla se filtra AL MOMENTO y en
+// Al escribir en «Canal o categoría» la tabla se filtra AL MOMENTO y en
 // local (sin red) sobre los directos ya cargados: coinciden canal o
-// titulo; primero los que empiezan por lo escrito y luego los que solo
-// lo contienen, conservando el orden por espectadores (el de g_rows)
-// dentro de cada grupo. Detras van las sugerencias EN VIVO de la
-// plataforma para ese mismo texto (si ya llegaron), sin duplicar y
-// pasando tambien por el filtro de Favoritos si el modo esta activo.
+// titulo (solo canal, sin categoria); primero los que empiezan por lo
+// escrito y luego los que solo lo contienen. Con texto, la lista va en
+// orden alfabetico; sin texto se mantiene el orden por espectadores de
+// la API. Detras van las sugerencias EN VIVO de la plataforma para ese
+// mismo texto (si ya llegaron), sin duplicar y pasando tambien por el
+// filtro de Favoritos si el modo esta activo.
 // Al borrar el texto vuelve la lista completa. Enter/Buscar comprueba
 // por API un canal concreto.
 static bool g_has_filter = false;
@@ -1531,13 +1333,15 @@ static bool g_has_filter = false;
 static void apply_filter(bool announce) {
     std::string typed = trim(g_input->value());
     std::string q = lower_of(typed);
-    // 0.8: en modo Favoritos la base es g_favs_rows (todos los favoritos,
-    // vivos primero, ya ordenada por el hilo); fuera de ahi, g_rows.
+    // 0.7: en modo Favoritos la base son los canales con like que
+    // estan en directo (de g_rows); fuera de ahi, g_rows completa.
     std::vector<Row> base;
-    if (g_favs_mode)
-        base = g_favs_rows;
-    else
+    if (g_favs_mode) {
+        for (size_t i = 0; i < g_rows.size(); i++)
+            if (g_likes.count(g_rows[i].slug)) base.push_back(g_rows[i]);
+    } else {
         base = g_rows;
+    }
     g_view.clear();
     size_t sugg_added = 0;
     if (q.empty()) {
@@ -1548,13 +1352,10 @@ static void apply_filter(bool announce) {
             for (size_t i = 0; i < base.size(); i++) {
                 std::string u = lower_of(base[i].user);
                 std::string t = lower_of(base[i].title);
-                std::string c = lower_of(base[i].category);  // 0.8: P4
                 bool starts = u.compare(0, q.size(), q) == 0 ||
-                              t.compare(0, q.size(), q) == 0 ||
-                              c.compare(0, q.size(), q) == 0;
+                              t.compare(0, q.size(), q) == 0;
                 bool has = u.find(q) != std::string::npos ||
-                           t.find(q) != std::string::npos ||
-                           c.find(q) != std::string::npos;
+                           t.find(q) != std::string::npos;
                 if ((pass == 0 && starts) || (pass == 1 && has && !starts)) {
                     g_view.push_back(base[i]);
                     shown.insert(base[i].slug);
@@ -1724,20 +1525,6 @@ static void awake_cb(void *p) {
         delete res;
         return;
     }
-    if (res->kind == JOB_FAVS) {
-        // 0.8: lista de favoritos ya ordenada (vivos primero).
-        if (res->ok) {
-            g_favs_rows = res->rows;
-            apply_filter(false);
-            if (!res->note.empty()) set_status(res->note);
-        } else {
-            set_status(res->err);
-            g_favs_mode = false;
-            update_favs_btn();
-        }
-        delete res;
-        return;
-    }
     if (res->ok) {
         g_rows = res->rows;
         apply_filter(false);   // respeta el texto que haya en el buscador
@@ -1875,7 +1662,7 @@ static void open_help() {
                                 &g_help_tocolor[tc++], nullptr);
         name->labelfont(FL_HELVETICA_BOLD);
         name->labelsize(26);
-        help_box(TX, 54, 470, 20, "versión 0.9", nullptr,
+        help_box(TX, 54, 470, 20, "versión 0.7", nullptr,
                  &g_help_dim[dm++]);
         help_box(TX, 78, 470, 20,
                  "Mira directos de Kick en tu antiguo PC, sin cuenta.",
@@ -2019,26 +1806,18 @@ int main(int argc, char **argv) {
         logo->box(FL_NO_BOX);
     }
 
-    g_lbl_search = new Fl_Box(60, 12, 80, 26, "Buscar:");
+    // 0.7: etiqueta estatica «Canal o categoría» junto al buscador.
+    g_lbl_search = new Fl_Box(60, 12, 130, 26, "Canal o categoría:");
     g_lbl_search->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     g_lbl_search->labelsize(13);
 
-    g_input = new SearchInput(145, 12, 240, 26);
+    g_input = new SearchInput(195, 12, 305, 26);
     g_input->textsize(13);
     g_input->when(FL_WHEN_CHANGED | FL_WHEN_ENTER_KEY);
     g_input->callback(input_changed_cb);
     g_input->tooltip("Escribe y la tabla se filtra al momento y te "
                      "sugiere canales en directo; Enter comprueba el "
                      "canal en Kick.");
-
-    // 0.9: Menu para elegir modo de busqueda (Canal o Categoria)
-    g_choice_mode = new Fl_Choice(390, 12, 110, 26, "");
-    g_choice_mode->add("Canal");
-    g_choice_mode->add("Categoria");
-    g_choice_mode->value(0);  // por defecto: Canal
-    g_choice_mode->textsize(13);
-    g_choice_mode->callback(mode_cb);
-    g_choice_mode->tooltip("Elige si buscar por Canal o por Categoria");
 
     g_btn_info = new Fl_Button(862, 12, 48, 26, "i");
     g_btn_info->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
@@ -2107,7 +1886,7 @@ int main(int argc, char **argv) {
     g_status->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     g_status->labelsize(12);
 
-    g_version = new Fl_Box(710, 566, 200, 22, "FLKicker 0.9 - FLTK - C++");
+    g_version = new Fl_Box(710, 566, 200, 22, "FLKicker 0.7 - FLTK - C++");
     g_version->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
     g_version->labelsize(12);
 
