@@ -112,7 +112,7 @@ GPL-3.0. Cliente no oficial, sin afiliación con Kick.
 - **Kick** — plataforma de streaming.
 - **Facundo Adorno** — creador de FLTube, proyecto que inspiró este cliente.
 - **AnddyCort** — creador de FLTV, proyecto inspirador.
-- **Nico Lombardi** — creador de FLinux, la distro donde corre FLKicker.
+- **Nico Longardi** — creador de FLinux, la distro donde corre FLKicker.
 - **Robert Shingledecker** — creador de Tiny Core Linux, base de FLinux.
 
 Cliente no oficial, sin afiliación con Kick.
