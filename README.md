@@ -2,19 +2,77 @@
 
 Cliente de Kick para Tiny Core / FLinux de 32 bits. Escrito en C++ con FLTK.
 
-## Cómo funciona
+![Icono](images/icono-128.png)
 
-FLKicker se conecta a la API pública de Kick sin necesidad de cuenta:
+## Qué hace
 
-- **Canales en vivo**: consulta `api.kick.com` para listar los directos activos.
-- **Búsqueda**: filtra canales por nombre mientras escribes (hasta 10 sugerencias).
-- **Verificación por nombre exacto**: con Enter comprueba si un canal existe aunque no esté en las sugerencias.
-- **Reproducción**: al reproducir, refresca el `playback_url` con token, obtiene el `master.m3u8` y lo pasa por `ffmpeg` → `mplayer` (con `-zoom` para pantalla completa).
-- **Favoritos**: guarda tus canales con 👍 en `~/.flkickerrc`.
-- **Punto rojo**: en la búsqueda, marca los canales que están apagados.
-- **Spinner verde**: la K del logo gira mientras carga datos.
-- **Modo claro/oscuro**: cambia el tema de la interfaz.
-- **Config remota**: descarga configuración firmada con Ed25519.
+FLKicker te permite ver directos de Kick sin necesidad de cuenta ni navegador:
+
+- Lista los canales en vivo
+- Busca canales por nombre
+- Marca favoritos con 👍
+- Reproduce en 160p–720p con mplayer
+- Modo claro y modo oscuro
+
+## Guía paso a paso
+
+### 1. Instalar
+
+Descarga los 3 archivos del repo (`flkicker32.tcz`, `.dep`, `.md5.txt`), verifica y copia a tu `tce/optional/`:
+
+```
+md5sum -c flkicker32.tcz.md5.txt
+cp flkicker32.tcz /etc/sysconfig/tcedir/optional/
+tce-load -i flkicker32.tcz
+```
+
+### 2. Abrir
+
+Ejecuta `flkicker` en terminal o desde el wbar. Verás la lista de canales en vivo:
+
+![Lista de canales](images/lista-canales.png)
+
+### 3. Buscar un canal
+
+Escribe en el campo de búsqueda. Te muestra sugerencias mientras escribes; con Enter verifica el nombre exacto.
+
+### 4. Marcar favorito
+
+Toca el 👍 de un canal para guardarlo:
+
+![Marcar favorito](images/favorito-like.png)
+
+Tus favoritos se guardan en `~/.flkickerrc` y persisten entre reinicios.
+
+### 5. Ver favoritos
+
+Pulsa el botón **Favoritos** para ver solo tus canales guardados:
+
+![Favoritos](images/favoritos.png)
+
+### 6. Reproducir
+
+Selecciona un canal y pulsa **REPRODUCIR**. Elige la calidad (160p–720p):
+
+![Reproduciendo](images/reproduciendo.png)
+
+Mientras reproduce, la app se bloquea (solo **Detener** e **Info** disponibles).
+
+### 7. Modo claro / oscuro
+
+Cambia el tema con el botón **Modo claro/oscuro**:
+
+| Claro | Oscuro |
+|---|---|
+| ![Modo claro](images/modo-claro.png) | ![Modo oscuro](images/modo-oscuro.png) |
+
+## Cómo funciona (técnico)
+
+- Se conecta a la API pública de Kick sin cuenta.
+- Al reproducir, refresca el `playback_url` con token → `master.m3u8` → tubería `ffmpeg` → `mplayer -zoom`.
+- Punto rojo = canal apagado en la búsqueda.
+- Spinner verde en la K mientras carga.
+- Config remota firmada con Ed25519.
 
 ### Dependencias
 
@@ -27,41 +85,9 @@ libEGL.tcz
 openssl.tcz
 ```
 
-## Instalación en FLinux 32 bits
-
-1. Descarga los 3 archivos:
-   - `flkicker32.tcz`
-   - `flkicker32.tcz.dep`
-   - `flkicker32.tcz.md5.txt`
-
-2. Verifica la integridad:
-   ```
-   md5sum -c flkicker32.tcz.md5.txt
-   ```
-
-3. Copia a tu directorio tce (para que persista):
-   ```
-   cp flkicker32.tcz /etc/sysconfig/tcedir/optional/
-   ```
-
-4. Instala:
-   ```
-   tce-load -i flkicker32.tcz
-   ```
-
-5. Ejecuta:
-   ```
-   flkicker
-   ```
-
-6. Para el icono en el wbar:
-   ```
-   sudo wbar_update.sh flkicker
-   ```
-
 ## Código fuente
 
-`flkicker.cpp` — fuente completo en C++/FLTK (versión 0.7).
+`flkicker.cpp` — fuente completo en C++/FLTK.
 
 ## Licencia
 
