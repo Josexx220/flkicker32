@@ -1738,7 +1738,7 @@ static void open_help() {
             "\n"
             "Proyectos que inspiraron FLKicker: FLTube, de Facundo "
             "Adorno; FLTV, de AnddyCort; y FLinux, de Nicol\xc3\xa1s "
-            "Lombardi, creador de FLinux.\n"
+            "Longardi, creador de FLinux.\n"
             "\n"
             "Cr\xc3\xa9" "ditos: a la comunidad FLTK y a Tiny Core "
             "Linux.\n"
