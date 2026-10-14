@@ -1,5 +1,6 @@
-fltk-1.3.tcz
 curl.tcz
 json-c.tcz
-openssl.tcz
+mplayer-cli.tcz
 ffmpeg4.tcz
+libEGL.tcz
+openssl.tcz
