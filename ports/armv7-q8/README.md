@@ -32,7 +32,7 @@ Dispositivo utilizado:
 
 ## Código fuente
 
-flkicker-q8-favoritos.cpp
+ports/armv7-q8/flkicker.cpp
 
 Este archivo contiene la versión modificada
 para Q8-A33.
@@ -41,8 +41,7 @@ para Q8-A33.
 
 Versión experimental desarrollada para Q8-A33.
 
-Las instrucciones reproducibles de compilación
-e instalación están pendientes de documentar.
+Compilación verificada en Armbian ARMv7.
 
 ## Licencia
 
@@ -50,3 +49,40 @@ GNU GPL v3.0, conforme al proyecto original.
 
 Se conservan los créditos del proyecto original.
 FLKicker-Q8 es una adaptación no oficial.
+
+## Compilación en Armbian ARMv7
+
+Plataforma probada: Q8-A33, ARMv7 armhf,
+Armbian Debian 12, FLTK 1.3.8 y GCC 12.2.
+
+### Dependencias
+
+Instalar con APT:
+
+- g++
+- pkg-config
+- libfltk1.3-dev
+- libcurl4-openssl-dev
+- libjson-c-dev
+- libssl-dev
+- mpv
+- ffmpeg
+
+### Compilación
+
+Desde el directorio ports/armv7-q8:
+
+    g++ -O2 -std=c++17 flkicker.cpp -o flkicker-q8 $(fltk-config --cxxflags --ldflags --use-images) $(pkg-config --cflags --libs libcurl json-c) -lcrypto -pthread
+
+### Ejecución
+
+Desde una sesión gráfica:
+
+    ./flkicker-q8
+
+### Compatibilidad
+
+Adaptación experimental para ARMv7.
+No reemplaza la versión original para PC.
+La compatibilidad con otros dispositivos ARM
+todavía no ha sido comprobada.
